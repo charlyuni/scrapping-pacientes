@@ -18,7 +18,7 @@ async function selectFacility(page: import('playwright').Page, asl: string, hosp
 async function waitForTable(page: import('playwright').Page): Promise<void> {
   await page.waitForLoadState('networkidle', { timeout: 20_000 });
   await page.waitForFunction(
-    (expectedColors: string[]) => {
+    (expectedColors: readonly string[]) => {
       const table = Array.from(document.querySelectorAll('table')).find((tbl) => {
         const headerText = tbl.innerText.toUpperCase();
         return expectedColors.every((c) => headerText.includes(c));

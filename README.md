@@ -14,7 +14,7 @@ Luego guarda snapshots históricos en base de datos usando Prisma.
 
 - Node.js 20 + TypeScript
 - Playwright (headless por defecto)
-- Prisma + PostgreSQL (SQLite soportado para dev)
+- Prisma + PostgreSQL
 - node-cron (cron interno)
 - Express API para validación
 - pino logging
@@ -33,8 +33,7 @@ Luego guarda snapshots históricos en base de datos usando Prisma.
 Ver `.env.example`.
 
 Principales:
-- `DATABASE_PROVIDER`: `postgresql` (default) o `sqlite`
-- `DATABASE_URL`
+- `DATABASE_URL` (obligatoria, Postgres)
 - `SCRAPE_INTERVAL_MINUTES` (default: `60`)
 - `HEADLESS` (default: `true`)
 - `TZ` (default: `UTC`)
@@ -66,6 +65,21 @@ Se evita duplicado por hora con índice único `facilityId + hourBucket`.
 Defaults de consulta:
 - `asl=ASL Nuoro`
 - `hospital=OSPEDALE SAN FRANCESCO`
+
+
+## Configuración mínima para que Prisma funcione
+
+1. Definí `DATABASE_URL` con una conexión válida a PostgreSQL.
+2. Generá el cliente Prisma:
+   ```bash
+   npm run prisma:generate
+   ```
+3. Aplicá migraciones:
+   ```bash
+   npm run migrate:deploy
+   ```
+
+> `DATABASE_PROVIDER` ya no se usa en este proyecto porque Prisma requiere un provider estático en el schema.
 
 ## Desarrollo local
 
@@ -106,10 +120,3 @@ La app corre en `http://localhost:3000`.
 - Reintentos de scraping: 2 reintentos (3 intentos totales) con backoff incremental.
 - Si falla un ciclo, no crashea el proceso; queda logueado y continúa el scheduler.
 
-## Nota para SQLite (dev)
-
-Si querés usar SQLite en desarrollo:
-- `DATABASE_PROVIDER=sqlite`
-- `DATABASE_URL="file:./dev.db"`
-
-Luego usar `npx prisma db push` para sincronizar rápido el schema en SQLite.

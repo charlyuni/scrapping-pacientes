@@ -3,17 +3,13 @@ import { z } from 'zod';
 
 dotenv.config();
 
-const booleanFromEnv = z
-  .string()
-  .optional()
-  .transform((value) => {
-    if (value === undefined) return undefined;
-    return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
-  });
+const booleanFromEnv = z.preprocess((value) => {
+  if (typeof value !== 'string') return value;
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}, z.boolean().optional());
 
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
-  DATABASE_PROVIDER: z.enum(['postgresql', 'sqlite']).default('postgresql'),
   PORT: z.coerce.number().default(3000),
   SCRAPE_INTERVAL_MINUTES: z.coerce.number().int().positive().default(60),
   HEADLESS: booleanFromEnv.default(true),
