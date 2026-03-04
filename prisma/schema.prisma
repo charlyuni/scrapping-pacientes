@@ -1,0 +1,57 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = env("DATABASE_PROVIDER")
+  url      = env("DATABASE_URL")
+}
+
+model Facility {
+  id        String     @id @default(cuid())
+  asl       String
+  hospital  String
+  snapshots Snapshot[]
+
+  @@unique([asl, hospital])
+}
+
+model Snapshot {
+  id         String      @id @default(cuid())
+  facilityId String
+  capturedAt DateTime
+  hourBucket DateTime
+  rawHtml    String?
+  sourceUrl  String?
+  createdAt  DateTime    @default(now())
+
+  facility   Facility    @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  metricRows MetricRow[]
+
+  @@unique([facilityId, hourBucket])
+  @@index([capturedAt])
+}
+
+model MetricRow {
+  id         String       @id @default(cuid())
+  snapshotId String
+  metricName String
+
+  snapshot   Snapshot     @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  cells      MetricCell[]
+
+  @@unique([snapshotId, metricName])
+}
+
+model MetricCell {
+  id           String     @id @default(cuid())
+  metricRowId  String
+  colorCode    String
+  valueString  String
+  valueNumber  Int?
+  valueMinutes Float?
+
+  metricRow    MetricRow  @relation(fields: [metricRowId], references: [id], onDelete: Cascade)
+
+  @@unique([metricRowId, colorCode])
+}
