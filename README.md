@@ -33,7 +33,8 @@ Luego guarda snapshots históricos en base de datos usando Prisma.
 Ver `.env.example`.
 
 Principales:
-- `DATABASE_URL` (obligatoria, Postgres)
+- `DATABASE_URL` (obligatoria, Postgres; puede ser pooler)
+- `DIRECT_URL` (recomendada para migraciones Prisma cuando `DATABASE_URL` usa pooler, p.ej. Supabase)
 - `SCRAPE_INTERVAL_MINUTES` (default: `60`)
 - `HEADLESS` (default: `true`)
 - `TZ` (default: `UTC`)
@@ -70,11 +71,12 @@ Defaults de consulta:
 ## Configuración mínima para que Prisma funcione
 
 1. Definí `DATABASE_URL` con una conexión válida a PostgreSQL.
-2. Generá el cliente Prisma:
+2. (Opcional pero recomendado) Definí `DIRECT_URL` con conexión directa al nodo Postgres para ejecutar migraciones en proveedores con pooler (Supabase/Neon).
+3. Generá el cliente Prisma:
    ```bash
    npm run prisma:generate
    ```
-3. Aplicá migraciones:
+4. Aplicá migraciones:
    ```bash
    npm run migrate:deploy
    ```
@@ -88,7 +90,7 @@ Defaults de consulta:
    ```bash
    npm install
    ```
-3. Aplicar migraciones:
+3. Aplicar migraciones (Prisma usará `DIRECT_URL` automáticamente si está definida):
    ```bash
    npm run migrate:deploy
    ```

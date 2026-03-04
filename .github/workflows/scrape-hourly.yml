@@ -46,6 +46,10 @@ jobs:
             exit 1
           fi
 
+          if [ -z "${DIRECT_URL}" ]; then
+            echo "DIRECT_URL is not set. Prisma migrate will run through DATABASE_URL (poolers like Supabase may cancel migrations)." >&2
+          fi
+
       - name: Run Prisma migrations
         run: npx prisma migrate deploy
 
