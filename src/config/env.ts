@@ -3,13 +3,10 @@ import { z } from 'zod';
 
 dotenv.config();
 
-const booleanFromEnv = z
-  .string()
-  .optional()
-  .transform((value) => {
-    if (value === undefined) return undefined;
-    return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
-  });
+const booleanFromEnv = z.preprocess((value) => {
+  if (typeof value !== 'string') return value;
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}, z.boolean().optional());
 
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1),

@@ -33,7 +33,7 @@ Luego guarda snapshots históricos en base de datos usando Prisma.
 Ver `.env.example`.
 
 Principales:
-- `DATABASE_URL`
+- `DATABASE_URL` (obligatoria, Postgres)
 - `SCRAPE_INTERVAL_MINUTES` (default: `60`)
 - `HEADLESS` (default: `true`)
 - `TZ` (default: `UTC`)
@@ -65,6 +65,21 @@ Se evita duplicado por hora con índice único `facilityId + hourBucket`.
 Defaults de consulta:
 - `asl=ASL Nuoro`
 - `hospital=OSPEDALE SAN FRANCESCO`
+
+
+## Configuración mínima para que Prisma funcione
+
+1. Definí `DATABASE_URL` con una conexión válida a PostgreSQL.
+2. Generá el cliente Prisma:
+   ```bash
+   npm run prisma:generate
+   ```
+3. Aplicá migraciones:
+   ```bash
+   npm run migrate:deploy
+   ```
+
+> `DATABASE_PROVIDER` ya no se usa en este proyecto porque Prisma requiere un provider estático en el schema.
 
 ## Desarrollo local
 
