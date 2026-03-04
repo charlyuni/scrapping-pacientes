@@ -84,8 +84,10 @@ export function createApp() {
     }
 
     const rowsHtml = snapshot.metricRows
-      .map((row) => {
-        const byColor = Object.fromEntries(row.cells.map((cell) => [cell.colorCode, cell.valueString]));
+      .map((row: (typeof snapshot.metricRows)[number]) => {
+        const byColor = Object.fromEntries(
+          row.cells.map((cell: (typeof row.cells)[number]) => [cell.colorCode, cell.valueString])
+        );
         return `<tr><td>${row.metricName}</td><td>${byColor.ROSSO ?? '-'}</td><td>${byColor.ARANCIONE ?? '-'}</td><td>${byColor.AZZURRO ?? '-'}</td><td>${byColor.VERDE ?? '-'}</td><td>${byColor.BIANCO ?? '-'}</td></tr>`;
       })
       .join('');
