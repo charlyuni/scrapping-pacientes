@@ -10,7 +10,6 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
-    "postinstall": "prisma generate",
     "migrate:deploy": "prisma migrate deploy"
   },
   "dependencies": {
