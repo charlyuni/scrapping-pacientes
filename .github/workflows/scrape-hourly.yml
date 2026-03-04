@@ -1,0 +1,50 @@
+name: scrape-hourly
+
+on:
+  schedule:
+    # Ejecuta el workflow cada hora en UTC (HH:00)
+    - cron: "0 * * * *"
+  # Permite ejecutarlo manualmente desde la pestaña Actions en GitHub
+  workflow_dispatch: {}
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # URL de conexión a tu base de datos PostgreSQL (Supabase/Neon). Debe declararse como secret en GitHub.
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # URL directa para migraciones (Neon). Opcional si usás Supabase o no necesitás direct pooler.
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      # Ejecutamos Playwright en modo headless para evitar abrir la UI
+      HEADLESS: "true"
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        # Instalamos Chromium y sus dependencias del sistema
+        run: npx playwright install --with-deps chromium
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Run Prisma migrations
+        run: npx prisma migrate deploy
+
+      - name: Build project
+        run: npm run build
+
+      - name: Run scraper
+        # Ejecutamos el script principal que realiza el scraping una sola vez
+        run: node dist/run.js
