@@ -13,7 +13,6 @@ const booleanFromEnv = z
 
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
-  DATABASE_PROVIDER: z.enum(['postgresql', 'sqlite']).default('postgresql'),
   PORT: z.coerce.number().default(3000),
   SCRAPE_INTERVAL_MINUTES: z.coerce.number().int().positive().default(60),
   HEADLESS: booleanFromEnv.default(true),

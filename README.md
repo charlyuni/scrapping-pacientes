@@ -14,7 +14,7 @@ Luego guarda snapshots históricos en base de datos usando Prisma.
 
 - Node.js 20 + TypeScript
 - Playwright (headless por defecto)
-- Prisma + PostgreSQL (SQLite soportado para dev)
+- Prisma + PostgreSQL
 - node-cron (cron interno)
 - Express API para validación
 - pino logging
@@ -33,7 +33,6 @@ Luego guarda snapshots históricos en base de datos usando Prisma.
 Ver `.env.example`.
 
 Principales:
-- `DATABASE_PROVIDER`: `postgresql` (default) o `sqlite`
 - `DATABASE_URL`
 - `SCRAPE_INTERVAL_MINUTES` (default: `60`)
 - `HEADLESS` (default: `true`)
@@ -106,10 +105,3 @@ La app corre en `http://localhost:3000`.
 - Reintentos de scraping: 2 reintentos (3 intentos totales) con backoff incremental.
 - Si falla un ciclo, no crashea el proceso; queda logueado y continúa el scheduler.
 
-## Nota para SQLite (dev)
-
-Si querés usar SQLite en desarrollo:
-- `DATABASE_PROVIDER=sqlite`
-- `DATABASE_URL="file:./dev.db"`
-
-Luego usar `npx prisma db push` para sincronizar rápido el schema en SQLite.
