@@ -13,9 +13,9 @@ jobs:
     timeout-minutes: 15
     env:
       # URL de conexión a tu base de datos PostgreSQL (Supabase/Neon). Debe declararse como secret en GitHub.
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL || vars.DATABASE_URL }}
       # URL directa para migraciones (Neon). Opcional si usás Supabase o no necesitás direct pooler.
-      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL || vars.DIRECT_URL }}
       # Ejecutamos Playwright en modo headless para evitar abrir la UI
       HEADLESS: "true"
 
@@ -38,6 +38,13 @@ jobs:
 
       - name: Generate Prisma client
         run: npx prisma generate
+
+      - name: Validate database configuration
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "DATABASE_URL is empty. Configure it in GitHub Secrets or Repository Variables before running this workflow." >&2
+            exit 1
+          fi
 
       - name: Run Prisma migrations
         run: npx prisma migrate deploy
