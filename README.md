@@ -115,8 +115,18 @@ La app corre en `http://localhost:3000`.
 - `npm run migrate:deploy`
 - `npm run prisma:generate`
 
+## GitHub Actions
+
+El workflow programado (`.github/workflows/scrape-hourly.yml`) necesita `DATABASE_URL` para poder ejecutar `prisma migrate deploy`.
+
+Configuración recomendada:
+- Definir `DATABASE_URL` como **Repository secret**.
+- Opcionalmente, definir `DIRECT_URL` para migraciones/direct connection.
+- Como fallback, también se aceptan **Repository variables** (`vars.DATABASE_URL` y `vars.DIRECT_URL`).
+
+Si `DATABASE_URL` no está configurada, el workflow falla temprano con un mensaje explícito antes de correr Prisma.
+
 ## Resiliencia
 
 - Reintentos de scraping: 2 reintentos (3 intentos totales) con backoff incremental.
 - Si falla un ciclo, no crashea el proceso; queda logueado y continúa el scheduler.
-
