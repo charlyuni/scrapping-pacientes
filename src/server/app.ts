@@ -2,6 +2,11 @@ import express from 'express';
 import { prisma } from '../db/client.js';
 import { logger } from '../utils/logger.js';
 
+const DEFAULT_ASL = 'ASL Nuoro';
+const DEFAULT_HOSPITAL = 'OSPEDALE SAN FRANCESCO';
+
+type SnapshotWithIncludedMetrics = NonNullable<Awaited<ReturnType<typeof prisma.snapshot.findFirst<{ include: ReturnType<typeof includeSnapshotQuery> }>>>>;
+
 function includeSnapshotQuery() {
   return {
     metricRows: {
@@ -12,8 +17,48 @@ function includeSnapshotQuery() {
   } as const;
 }
 
+function getFacilityQuery(req: express.Request) {
+  return {
+    asl: String(req.query.asl || DEFAULT_ASL),
+    hospital: String(req.query.hospital || DEFAULT_HOSPITAL)
+  };
+}
+
+function buildCellMap(snapshot: SnapshotWithIncludedMetrics) {
+  const map = new Map<string, { valueString: string; valueNumber: number | null; valueMinutes: number | null }>();
+
+  for (const row of snapshot.metricRows) {
+    for (const cell of row.cells) {
+      map.set(`${row.metricName}::${cell.colorCode}`, {
+        valueString: cell.valueString,
+        valueNumber: cell.valueNumber,
+        valueMinutes: cell.valueMinutes
+      });
+    }
+  }
+
+  return map;
+}
+
+function parseHours(value: unknown, fallback: number, max = 24 * 14) {
+  const parsed = Number(value ?? fallback);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(Math.floor(parsed), max);
+}
+
 export function createApp() {
   const app = express();
+
+  app.use((_req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    if (_req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
 
   app.get('/health', async (_req, res) => {
     await prisma.$queryRaw`SELECT 1`;
@@ -21,8 +66,7 @@ export function createApp() {
   });
 
   app.get('/latest', async (req, res) => {
-    const asl = String(req.query.asl || 'ASL Nuoro');
-    const hospital = String(req.query.hospital || 'OSPEDALE SAN FRANCESCO');
+    const { asl, hospital } = getFacilityQuery(req);
 
     const snapshot = await prisma.snapshot.findFirst({
       where: {
@@ -44,8 +88,7 @@ export function createApp() {
   });
 
   app.get('/snapshots', async (req, res) => {
-    const asl = String(req.query.asl || 'ASL Nuoro');
-    const hospital = String(req.query.hospital || 'OSPEDALE SAN FRANCESCO');
+    const { asl, hospital } = getFacilityQuery(req);
     const from = req.query.from ? new Date(String(req.query.from)) : undefined;
     const to = req.query.to ? new Date(String(req.query.to)) : undefined;
 
@@ -70,6 +113,173 @@ export function createApp() {
     });
 
     res.json(snapshots);
+  });
+
+  app.get('/stats/summary', async (req, res) => {
+    const { asl, hospital } = getFacilityQuery(req);
+    const latestTwo = await prisma.snapshot.findMany({
+      where: {
+        facility: {
+          asl,
+          hospital
+        }
+      },
+      orderBy: { capturedAt: 'desc' },
+      take: 2,
+      include: includeSnapshotQuery()
+    });
+
+    if (!latestTwo[0]) {
+      res.status(404).json({ error: 'No snapshots found' });
+      return;
+    }
+
+    const latest = latestTwo[0];
+    const previous = latestTwo[1] ?? null;
+    const latestMap = buildCellMap(latest);
+    const previousMap = previous ? buildCellMap(previous) : new Map();
+
+    const cards = Array.from(latestMap.entries()).map(([key, current]) => {
+      const [metricName, colorCode] = key.split('::');
+      const before = previousMap.get(key);
+      const deltaNumber =
+        typeof current.valueNumber === 'number' && typeof before?.valueNumber === 'number'
+          ? current.valueNumber - before.valueNumber
+          : null;
+      const deltaMinutes =
+        typeof current.valueMinutes === 'number' && typeof before?.valueMinutes === 'number'
+          ? current.valueMinutes - before.valueMinutes
+          : null;
+
+      return {
+        metricName,
+        colorCode,
+        current,
+        previous: before ?? null,
+        deltaNumber,
+        deltaMinutes
+      };
+    });
+
+    res.json({
+      facility: { asl, hospital },
+      latestCapturedAt: latest.capturedAt,
+      previousCapturedAt: previous?.capturedAt ?? null,
+      cards
+    });
+  });
+
+  app.get('/stats/trends', async (req, res) => {
+    const { asl, hospital } = getFacilityQuery(req);
+    const hours = parseHours(req.query.hours, 24, 24 * 30);
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+    const snapshots = await prisma.snapshot.findMany({
+      where: {
+        facility: {
+          asl,
+          hospital
+        },
+        capturedAt: {
+          gte: since
+        }
+      },
+      orderBy: { capturedAt: 'asc' },
+      include: includeSnapshotQuery()
+    });
+
+    const seriesMap = new Map<string, { metricName: string; colorCode: string; points: Array<{ capturedAt: Date; valueNumber: number | null; valueMinutes: number | null; valueString: string }> }>();
+
+    for (const snapshot of snapshots) {
+      for (const row of snapshot.metricRows) {
+        for (const cell of row.cells) {
+          const key = `${row.metricName}::${cell.colorCode}`;
+          if (!seriesMap.has(key)) {
+            seriesMap.set(key, {
+              metricName: row.metricName,
+              colorCode: cell.colorCode,
+              points: []
+            });
+          }
+          seriesMap.get(key)?.points.push({
+            capturedAt: snapshot.capturedAt,
+            valueNumber: cell.valueNumber,
+            valueMinutes: cell.valueMinutes,
+            valueString: cell.valueString
+          });
+        }
+      }
+    }
+
+    res.json({
+      facility: { asl, hospital },
+      hours,
+      snapshots: snapshots.length,
+      series: Array.from(seriesMap.values())
+    });
+  });
+
+  app.get('/stats/distribution', async (req, res) => {
+    const { asl, hospital } = getFacilityQuery(req);
+    const hours = parseHours(req.query.hours, 24 * 7, 24 * 24);
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+    const snapshots = await prisma.snapshot.findMany({
+      where: {
+        facility: {
+          asl,
+          hospital
+        },
+        capturedAt: {
+          gte: since
+        }
+      },
+      orderBy: { capturedAt: 'asc' },
+      include: includeSnapshotQuery()
+    });
+
+    const aggMap = new Map<string, { metricName: string; colorCode: string; samples: number; sumNumber: number; countNumber: number; sumMinutes: number; countMinutes: number }>();
+
+    for (const snapshot of snapshots) {
+      for (const row of snapshot.metricRows) {
+        for (const cell of row.cells) {
+          const key = `${row.metricName}::${cell.colorCode}`;
+          if (!aggMap.has(key)) {
+            aggMap.set(key, {
+              metricName: row.metricName,
+              colorCode: cell.colorCode,
+              samples: 0,
+              sumNumber: 0,
+              countNumber: 0,
+              sumMinutes: 0,
+              countMinutes: 0
+            });
+          }
+          const agg = aggMap.get(key);
+          if (!agg) continue;
+          agg.samples += 1;
+          if (typeof cell.valueNumber === 'number') {
+            agg.sumNumber += cell.valueNumber;
+            agg.countNumber += 1;
+          }
+          if (typeof cell.valueMinutes === 'number') {
+            agg.sumMinutes += cell.valueMinutes;
+            agg.countMinutes += 1;
+          }
+        }
+      }
+    }
+
+    res.json({
+      facility: { asl, hospital },
+      hours,
+      snapshots: snapshots.length,
+      distribution: Array.from(aggMap.values()).map((agg) => ({
+        ...agg,
+        avgNumber: agg.countNumber ? agg.sumNumber / agg.countNumber : null,
+        avgMinutes: agg.countMinutes ? agg.sumMinutes / agg.countMinutes : null
+      }))
+    });
   });
 
   app.get('/dashboard', async (_req, res) => {
