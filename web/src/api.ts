@@ -1,48 +1,51 @@
-export interface SummaryResponse {
-  latestCapturedAt: string;
-  previousCapturedAt: string | null;
-  cards: Array<{
-    metricName: string;
+export interface WaitingPatientsResponse {
+  metricName: string;
+  filters: {
+    hours: number;
+    dayType: 'ALL' | 'WEEKDAY' | 'WEEKEND';
+    weekdays: number[] | null;
     colorCode: string;
-    current: {
-      valueString: string;
-      valueNumber: number | null;
-      valueMinutes: number | null;
-    };
-    previous: {
-      valueString: string;
-      valueNumber: number | null;
-      valueMinutes: number | null;
-    } | null;
-    deltaNumber: number | null;
-    deltaMinutes: number | null;
-  }>;
-}
-
-export interface TrendsResponse {
-  hours: number;
-  snapshots: number;
+  };
+  latest: {
+    capturedAt: string;
+    totalWaiting: number;
+    deltaVsPrevious: number | null;
+    byColor: Record<string, number>;
+  } | null;
+  snapshotsInWindow: number;
+  snapshotsAfterFilters: number;
   series: Array<{
-    metricName: string;
-    colorCode: string;
-    points: Array<{
-      capturedAt: string;
-      valueString: string;
-      valueNumber: number | null;
-      valueMinutes: number | null;
-    }>;
+    capturedAt: string;
+    totalWaiting: number;
+    weekday: number;
+    weekdayLabel: string;
+    dayType: 'WEEKDAY' | 'WEEKEND';
   }>;
-}
-
-export interface DistributionResponse {
-  hours: number;
-  snapshots: number;
-  distribution: Array<{
-    metricName: string;
-    colorCode: string;
+  dayTypeStats: {
+    weekday: {
+      samples: number;
+      avgWaiting: number | null;
+      peakWaiting: number | null;
+    };
+    weekend: {
+      samples: number;
+      avgWaiting: number | null;
+      peakWaiting: number | null;
+    };
+  };
+  weekdayStats: Array<{
+    weekday: number;
+    weekdayLabel: string;
     samples: number;
-    avgNumber: number | null;
-    avgMinutes: number | null;
+    avgWaiting: number | null;
+    peakWaiting: number | null;
+  }>;
+  topPeakDays: Array<{
+    weekday: number;
+    weekdayLabel: string;
+    samples: number;
+    avgWaiting: number | null;
+    peakWaiting: number | null;
   }>;
 }
 
@@ -65,14 +68,21 @@ async function fetchJson<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function getSummary() {
-  return fetchJson<SummaryResponse>('/stats/summary');
-}
+export function getWaitingPatientsStats(params: {
+  hours: number;
+  dayType: 'ALL' | 'WEEKDAY' | 'WEEKEND';
+  weekdays: number[];
+  colorCode: string;
+}) {
+  const query = new URLSearchParams({
+    hours: String(params.hours),
+    dayType: params.dayType,
+    colorCode: params.colorCode
+  });
 
-export function getTrends(hours = 24) {
-  return fetchJson<TrendsResponse>(`/stats/trends?hours=${hours}`);
-}
+  if (params.weekdays.length > 0) {
+    query.set('weekdays', params.weekdays.join(','));
+  }
 
-export function getDistribution(hours = 24 * 7) {
-  return fetchJson<DistributionResponse>(`/stats/distribution?hours=${hours}`);
+  return fetchJson<WaitingPatientsResponse>(`/stats/waiting-patients?${query.toString()}`);
 }
