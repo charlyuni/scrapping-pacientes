@@ -79,19 +79,31 @@ class QueryTimeoutError extends Error {
 }
 
 async function withQueryTimeout<T>(query: Promise<T>, timeoutMs = 10_000): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  return await new Promise<T>((resolve, reject) => {
+    let timedOut = false;
 
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => reject(new QueryTimeoutError(timeoutMs)), timeoutMs);
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      reject(new QueryTimeoutError(timeoutMs));
+    }, timeoutMs);
+
+    query
+      .then((result) => {
+        if (timedOut) {
+          return;
+        }
+        clearTimeout(timeoutId);
+        resolve(result);
+      })
+      .catch((error: unknown) => {
+        if (timedOut) {
+          logger.warn({ error: getErrorLogPayload(error) }, 'Query failed after timeout');
+          return;
+        }
+        clearTimeout(timeoutId);
+        reject(error);
+      });
   });
-
-  try {
-    return await Promise.race([query, timeoutPromise]);
-  } finally {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
-  }
 }
 
 export function createApp() {
