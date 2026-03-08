@@ -5,14 +5,108 @@ import { COLOR_CODES, type ScrapeResult, type ScrapedRow } from './types.js';
 
 const SOURCE_URL = 'https://monitorps.sardegnasalute.it/monitorps/MonitorServlet';
 
-async function selectFacility(page: import('playwright').Page, asl: string, hospital: string): Promise<void> {
-  const aslSelect = page.locator('select').filter({ has: page.locator('option', { hasText: asl }) }).first();
-  await aslSelect.waitFor({ state: 'visible', timeout: 20_000 });
-  await aslSelect.selectOption({ label: asl });
+type FrameContext = import('playwright').Frame | import('playwright').Page;
 
-  const hospitalSelect = page.locator('select').filter({ has: page.locator('option', { hasText: hospital }) }).first();
+function normalizeText(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+async function findMatchingSelect(
+  context: FrameContext,
+  expectedOptionText: string
+): Promise<import('playwright').Locator | null> {
+  const target = normalizeText(expectedOptionText);
+  const selects = context.locator('select');
+  const selectCount = await selects.count();
+
+  for (let index = 0; index < selectCount; index += 1) {
+    const select = selects.nth(index);
+    const options = await select.locator('option').allTextContents();
+    const hasExpectedOption = options.some((optionText) => normalizeText(optionText).includes(target));
+
+    if (hasExpectedOption) {
+      return select;
+    }
+  }
+
+  return null;
+}
+
+async function selectOptionByLabelIncludes(
+  select: import('playwright').Locator,
+  expectedOptionText: string
+): Promise<void> {
+  const target = normalizeText(expectedOptionText);
+  const options = await select.locator('option').evaluateAll((nodes) =>
+    nodes.map((option) => ({
+      value: (option as HTMLOptionElement).value,
+      label: (option as HTMLOptionElement).label,
+      text: option.textContent ?? ''
+    }))
+  );
+
+  const match = options.find((option) => {
+    const candidate = option.label || option.text;
+    return normalizeText(candidate).includes(target);
+  });
+
+  if (!match) {
+    throw new Error(`No se encontró opción '${expectedOptionText}' en el select`);
+  }
+
+  await select.selectOption({ value: match.value });
+}
+
+async function selectFacility(page: import('playwright').Page, asl: string, hospital: string): Promise<void> {
+  await page.waitForLoadState('domcontentloaded', { timeout: 20_000 });
+
+  const contexts: FrameContext[] = [page, ...page.frames()];
+
+  let aslSelect: import('playwright').Locator | null = null;
+  for (const context of contexts) {
+    aslSelect = await findMatchingSelect(context, asl);
+    if (aslSelect) break;
+  }
+
+  if (!aslSelect) {
+    const debug = await page.evaluate(() => {
+      const selects = Array.from(document.querySelectorAll('select')).map((select) =>
+        Array.from(select.querySelectorAll('option')).map((option) => option.textContent?.trim() ?? '')
+      );
+
+      return {
+        title: document.title,
+        url: location.href,
+        selectCount: selects.length,
+        optionsPreview: selects.slice(0, 3)
+      };
+    });
+
+    throw new Error(`No se encontró select para ASL '${asl}'. Debug: ${JSON.stringify(debug)}`);
+  }
+
+  await aslSelect.waitFor({ state: 'visible', timeout: 20_000 });
+  await selectOptionByLabelIncludes(aslSelect, asl);
+
+  await page.waitForLoadState('networkidle', { timeout: 20_000 });
+
+  let hospitalSelect: import('playwright').Locator | null = null;
+  for (const context of contexts) {
+    hospitalSelect = await findMatchingSelect(context, hospital);
+    if (hospitalSelect) break;
+  }
+
+  if (!hospitalSelect) {
+    throw new Error(`No se encontró select para hospital '${hospital}' después de seleccionar ASL '${asl}'`);
+  }
+
   await hospitalSelect.waitFor({ state: 'visible', timeout: 20_000 });
-  await hospitalSelect.selectOption({ label: hospital });
+  await selectOptionByLabelIncludes(hospitalSelect, hospital);
 }
 
 async function waitForTable(page: import('playwright').Page): Promise<void> {
