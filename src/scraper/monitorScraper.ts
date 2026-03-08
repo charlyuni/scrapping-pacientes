@@ -183,15 +183,23 @@ async function waitForTable(page: import('playwright').Page): Promise<void> {
   await page.waitForLoadState('networkidle', { timeout: 20_000 });
   await page.waitForFunction(
     (expectedColors: readonly string[]) => {
+      const normalize = (text: string) => text.replace(/\s+/g, ' ').trim().toUpperCase();
+
       const table = Array.from(document.querySelectorAll('table')).find((tbl) => {
-        const headerText = tbl.innerText.toUpperCase();
-        return expectedColors.every((c) => headerText.includes(c));
+        const firstRowCells = Array.from(tbl.querySelectorAll('tbody tr:first-child td, tbody tr:first-child th'))
+          .map((cell) => normalize(cell.textContent ?? ''));
+
+        if (firstRowCells.length < 6) {
+          return false;
+        }
+
+        return expectedColors.every((color, index) => firstRowCells[index + 1]?.includes(color));
       });
 
       if (!table) return false;
 
       const bodyRows = table.querySelectorAll('tbody tr');
-      return bodyRows.length >= 5;
+      return bodyRows.length >= 6;
     },
     COLOR_CODES,
     { timeout: 20_000 }
@@ -200,22 +208,34 @@ async function waitForTable(page: import('playwright').Page): Promise<void> {
 
 async function extractRows(page: import('playwright').Page): Promise<ScrapedRow[]> {
   const rows = await page.evaluate((colors) => {
+    const normalize = (text: string) => text.replace(/\s+/g, ' ').trim();
+    const normalizeUpper = (text: string) => normalize(text).toUpperCase();
+
     const table = Array.from(document.querySelectorAll('table')).find((tbl) => {
-      const headerText = tbl.innerText.toUpperCase();
-      return colors.every((c) => headerText.includes(c));
+      const firstRowCells = Array.from(tbl.querySelectorAll('tbody tr:first-child td, tbody tr:first-child th'))
+        .map((cell) => normalizeUpper(cell.textContent ?? ''));
+
+      if (firstRowCells.length < 6) {
+        return false;
+      }
+
+      return colors.every((color, index) => firstRowCells[index + 1]?.includes(color));
     });
 
     if (!table) {
       throw new Error('No se encontró la tabla con códigos de color esperados');
     }
 
-    const normalize = (text: string) => text.replace(/\s+/g, ' ').trim();
     const output: Array<{ metricName: string; cells: Record<string, string> }> = [];
 
     const bodyRows = Array.from(table.querySelectorAll('tbody tr'));
-    for (const row of bodyRows) {
+    for (const [index, row] of bodyRows.entries()) {
       const cells = Array.from(row.querySelectorAll('th,td')).map((cell) => normalize(cell.textContent ?? ''));
       if (cells.length < 6) continue;
+
+      if (index === 0) {
+        continue;
+      }
 
       const metricName = cells[0];
       const values = cells.slice(1, 6);
