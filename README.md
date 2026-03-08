@@ -61,6 +61,9 @@ Se evita duplicado por hora con índice único `facilityId + hourBucket`.
 - `GET /health`
 - `GET /latest?asl=...&hospital=...`
 - `GET /snapshots?asl=...&hospital=...&from=...&to=...`
+- `GET /stats/summary?asl=...&hospital=...`
+- `GET /stats/trends?asl=...&hospital=...&hours=24`
+- `GET /stats/distribution?asl=...&hospital=...&hours=168`
 - `GET /dashboard` (HTML simple opcional)
 
 Defaults de consulta:
@@ -116,6 +119,24 @@ La app corre en `http://localhost:3000`.
 - `npm run start`
 - `npm run migrate:deploy`
 - `npm run prisma:generate`
+
+## Dashboard React (Vercel)
+
+Se agregó una app React en `web/` pensada para desplegar en Vercel.
+
+### Variables recomendadas
+
+- `VITE_API_BASE_URL` apuntando al backend (ej: Render/Railway/Fly/tu VPS).
+
+### Deploy en Vercel (frontend)
+
+1. Importá el repositorio en Vercel.
+2. Tenés dos opciones:
+   - Usar el `vercel.json` del repo (build en `web/` y output `web/dist`).
+   - O configurar manualmente el **Root Directory** en `web`.
+3. Definí `VITE_API_BASE_URL` con la URL pública del backend.
+
+La API backend sigue corriendo por separado (Node + Prisma + Postgres).
 
 ## GitHub Actions
 
