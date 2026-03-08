@@ -173,11 +173,17 @@ export function createApp() {
       };
     });
 
-    res.json({
+    const summary = {
       facility: { asl, hospital },
       latestCapturedAt: latest.capturedAt,
       previousCapturedAt: previous?.capturedAt ?? null,
       cards
+    };
+
+    // Backwards-compatible envelope for clients that still read `payload`.
+    res.json({
+      ...summary,
+      payload: summary
     });
   }));
 
