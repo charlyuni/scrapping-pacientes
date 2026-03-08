@@ -119,4 +119,4 @@ jobs:
 
       - name: Run scraper
         # Ejecutamos el script principal que realiza el scraping una sola vez
-        run: node dist/run.js
+        run: node dist/index.js
