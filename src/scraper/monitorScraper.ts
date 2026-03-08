@@ -66,9 +66,64 @@ async function selectOptionByLabelIncludes(
   await select.selectOption({ value: match.value });
 }
 
+async function submitFormLinkByText(page: import('playwright').Page, linkText: string): Promise<boolean> {
+  const target = normalizeText(linkText);
+  const submitted = await page.evaluate((expected) => {
+    const normalize = (value: string): string =>
+      value
+        .normalize('NFD')
+        .replace(/\p{Diacritic}/gu, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toUpperCase();
+
+    const links = Array.from(document.querySelectorAll('a'));
+    const match = links.find((anchor) => {
+      const text = normalize(anchor.textContent ?? '');
+      return text.includes(expected);
+    });
+
+    if (!match) {
+      return false;
+    }
+
+    const onclick = match.getAttribute('onclick') ?? '';
+    const formId = onclick.match(/getElementById\('([^']+)'\)\.submit\(\)/)?.[1];
+
+    if (formId) {
+      const form = document.getElementById(formId) as HTMLFormElement | null;
+      if (form) {
+        form.submit();
+        return true;
+      }
+    }
+
+    match.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    return true;
+  }, target);
+
+  if (!submitted) {
+    return false;
+  }
+
+  await page.waitForLoadState('domcontentloaded', { timeout: 20_000 });
+  await page.waitForLoadState('networkidle', { timeout: 20_000 });
+  return true;
+}
+
 async function selectFacility(page: import('playwright').Page, asl: string, hospital: string): Promise<void> {
   await page.waitForLoadState('domcontentloaded', { timeout: 20_000 });
-  await page.waitForSelector('select, table', { timeout: 20_000 });
+  await page.waitForSelector('select, table, a[onclick*="submit"]', { timeout: 20_000 });
+
+  const usedAslLink = await submitFormLinkByText(page, asl);
+  if (usedAslLink) {
+    const usedHospitalLink = await submitFormLinkByText(page, hospital);
+    if (!usedHospitalLink) {
+      throw new Error(`No se encontró enlace/formulario para hospital '${hospital}' después de ASL '${asl}'`);
+    }
+
+    return;
+  }
 
   let contexts = getContexts(page);
 
