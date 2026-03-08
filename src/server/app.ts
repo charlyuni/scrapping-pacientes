@@ -58,6 +58,28 @@ function asyncHandler(handler: AsyncRequestHandler): express.RequestHandler {
   };
 }
 
+class QueryTimeoutError extends Error {
+  constructor(public readonly timeoutMs: number) {
+    super(`Database query timed out after ${timeoutMs}ms`);
+  }
+}
+
+async function withQueryTimeout<T>(query: Promise<T>, timeoutMs = 10_000): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new QueryTimeoutError(timeoutMs)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([query, timeoutPromise]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
 export function createApp() {
   const app = express();
 
@@ -129,7 +151,7 @@ export function createApp() {
 
   app.get('/stats/summary', asyncHandler(async (req, res) => {
     const { asl, hospital } = getFacilityQuery(req);
-    const latestTwo = await prisma.snapshot.findMany({
+    const latestTwo = await withQueryTimeout(prisma.snapshot.findMany({
       where: {
         facility: {
           asl,
@@ -139,7 +161,7 @@ export function createApp() {
       orderBy: { capturedAt: 'desc' },
       take: 2,
       include: includeSnapshotQuery()
-    });
+    }));
 
     if (!latestTwo[0]) {
       res.status(404).json({ error: 'No snapshots found' });
@@ -192,7 +214,7 @@ export function createApp() {
     const hours = parseHours(req.query.hours, 24, 24 * 30);
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
 
-    const snapshots = await prisma.snapshot.findMany({
+    const snapshots = await withQueryTimeout(prisma.snapshot.findMany({
       where: {
         facility: {
           asl,
@@ -204,7 +226,7 @@ export function createApp() {
       },
       orderBy: { capturedAt: 'asc' },
       include: includeSnapshotQuery()
-    });
+    }));
 
     const seriesMap = new Map<string, { metricName: string; colorCode: string; points: Array<{ capturedAt: Date; valueNumber: number | null; valueMinutes: number | null; valueString: string }> }>();
 
@@ -242,7 +264,7 @@ export function createApp() {
     const hours = parseHours(req.query.hours, 24 * 7, 24 * 24);
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
 
-    const snapshots = await prisma.snapshot.findMany({
+    const snapshots = await withQueryTimeout(prisma.snapshot.findMany({
       where: {
         facility: {
           asl,
@@ -254,7 +276,7 @@ export function createApp() {
       },
       orderBy: { capturedAt: 'asc' },
       include: includeSnapshotQuery()
-    });
+    }));
 
     const aggMap = new Map<string, { metricName: string; colorCode: string; samples: number; sumNumber: number; countNumber: number; sumMinutes: number; countMinutes: number }>();
 
@@ -333,6 +355,14 @@ export function createApp() {
   }));
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    if (err instanceof QueryTimeoutError) {
+      res.status(504).json({
+        error: 'Database timeout',
+        message: 'The database took too long to answer. Please retry in a few seconds.'
+      });
+      return;
+    }
+
     logger.error({ err }, 'Unhandled server error');
     res.status(500).json({ error: 'Internal server error' });
   });
