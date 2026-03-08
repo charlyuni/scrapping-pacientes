@@ -47,7 +47,7 @@ jobs:
           fi
 
           if [ -z "${DIRECT_URL}" ]; then
-            echo "DIRECT_URL is not set. Prisma migrate will run through DATABASE_URL (poolers like Supabase may cancel migrations)." >&2
+            echo "DIRECT_URL is not set. Prisma migrate will run using DATABASE_URL as fallback."
           fi
 
       - name: Run Prisma migrations
@@ -60,10 +60,10 @@ jobs:
               exit 0
             fi
 
-            echo "DIRECT_URL failed. Retrying prisma migrate deploy with DATABASE_URL only..." >&2
+            echo "DIRECT_URL failed. Retrying prisma migrate deploy using DATABASE_URL as DIRECT_URL fallback..." >&2
           fi
 
-          unset DIRECT_URL
+          export DIRECT_URL="${DATABASE_URL}"
           npx prisma migrate deploy
 
       - name: Build project
