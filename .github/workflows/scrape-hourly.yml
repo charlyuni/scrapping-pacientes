@@ -51,7 +51,20 @@ jobs:
           fi
 
       - name: Run Prisma migrations
-        run: npx prisma migrate deploy
+        run: |
+          set -euo pipefail
+
+          if [ -n "${DIRECT_URL:-}" ]; then
+            echo "Trying prisma migrate deploy with DIRECT_URL first..."
+            if npx prisma migrate deploy; then
+              exit 0
+            fi
+
+            echo "DIRECT_URL failed. Retrying prisma migrate deploy with DATABASE_URL only..." >&2
+          fi
+
+          unset DIRECT_URL
+          npx prisma migrate deploy
 
       - name: Build project
         run: npm run build
