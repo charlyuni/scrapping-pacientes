@@ -1,5 +1,26 @@
 {
-  "framework": "vite",
   "buildCommand": "cd web && npm install && npm run build",
-  "outputDirectory": "web/dist"
+  "outputDirectory": "web/dist",
+  "rewrites": [
+    {
+      "source": "/health",
+      "destination": "/api/health"
+    },
+    {
+      "source": "/latest",
+      "destination": "/api/latest"
+    },
+    {
+      "source": "/snapshots",
+      "destination": "/api/snapshots"
+    },
+    {
+      "source": "/dashboard",
+      "destination": "/api/dashboard"
+    },
+    {
+      "source": "/stats/:path*",
+      "destination": "/api/stats/:path*"
+    }
+  ]
 }
