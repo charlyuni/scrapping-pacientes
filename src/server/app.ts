@@ -417,6 +417,8 @@ export function createApp() {
       }
     }));
 
+    const latestSnapshot = snapshots.at(-1) ?? null;
+
     const rawSeries = snapshots
       .map((snapshot) => {
         const waitingRow = snapshot.metricRows[0];
@@ -517,7 +519,21 @@ export function createApp() {
       topPeakDays: weekdayStats
         .filter((item) => item.peakWaiting !== null)
         .sort((a, b) => (b.peakWaiting ?? 0) - (a.peakWaiting ?? 0))
-        .slice(0, 3)
+        .slice(0, 3),
+      latestSnapshot: latestSnapshot
+        ? {
+            capturedAt: latestSnapshot.capturedAt,
+            sourceUrl: latestSnapshot.sourceUrl,
+            rawHtml: latestSnapshot.rawHtml,
+            tableRows: latestSnapshot.metricRows.map((row) => ({
+              metricName: row.metricName,
+              byColor: row.cells.reduce<Record<string, string>>((acc, cell) => {
+                acc[cell.colorCode] = cell.valueString;
+                return acc;
+              }, {})
+            }))
+          }
+        : null
     });
   }));
 
