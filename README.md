@@ -135,6 +135,10 @@ Se agregó una app React en `web/` pensada para desplegar en Vercel.
    - Usar el `vercel.json` del repo (build en `web/` y output `web/dist`).
    - O configurar manualmente el **Root Directory** en `web`.
 3. Definí `VITE_API_BASE_URL` con la URL pública del backend.
+2. Configurá el **Root Directory** en `web`.
+3. Build command: `npm run build`.
+4. Output directory: `dist`.
+5. Definí `VITE_API_BASE_URL` con la URL pública del backend.
 
 La API backend sigue corriendo por separado (Node + Prisma + Postgres).
 
