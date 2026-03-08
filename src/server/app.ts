@@ -46,6 +46,18 @@ function parseHours(value: unknown, fallback: number, max = 24 * 14) {
   return Math.min(Math.floor(parsed), max);
 }
 
+type AsyncRequestHandler = (
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) => Promise<unknown>;
+
+function asyncHandler(handler: AsyncRequestHandler): express.RequestHandler {
+  return (req, res, next) => {
+    void Promise.resolve(handler(req, res, next)).catch(next);
+  };
+}
+
 export function createApp() {
   const app = express();
 
@@ -60,12 +72,12 @@ export function createApp() {
     next();
   });
 
-  app.get('/health', async (_req, res) => {
+  app.get('/health', asyncHandler(async (_req, res) => {
     await prisma.$queryRaw`SELECT 1`;
     res.json({ status: 'ok', time: new Date().toISOString() });
-  });
+  }));
 
-  app.get('/latest', async (req, res) => {
+  app.get('/latest', asyncHandler(async (req, res) => {
     const { asl, hospital } = getFacilityQuery(req);
 
     const snapshot = await prisma.snapshot.findFirst({
@@ -85,9 +97,9 @@ export function createApp() {
     }
 
     res.json(snapshot);
-  });
+  }));
 
-  app.get('/snapshots', async (req, res) => {
+  app.get('/snapshots', asyncHandler(async (req, res) => {
     const { asl, hospital } = getFacilityQuery(req);
     const from = req.query.from ? new Date(String(req.query.from)) : undefined;
     const to = req.query.to ? new Date(String(req.query.to)) : undefined;
@@ -113,9 +125,9 @@ export function createApp() {
     });
 
     res.json(snapshots);
-  });
+  }));
 
-  app.get('/stats/summary', async (req, res) => {
+  app.get('/stats/summary', asyncHandler(async (req, res) => {
     const { asl, hospital } = getFacilityQuery(req);
     const latestTwo = await prisma.snapshot.findMany({
       where: {
@@ -167,9 +179,9 @@ export function createApp() {
       previousCapturedAt: previous?.capturedAt ?? null,
       cards
     });
-  });
+  }));
 
-  app.get('/stats/trends', async (req, res) => {
+  app.get('/stats/trends', asyncHandler(async (req, res) => {
     const { asl, hospital } = getFacilityQuery(req);
     const hours = parseHours(req.query.hours, 24, 24 * 30);
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
@@ -217,9 +229,9 @@ export function createApp() {
       snapshots: snapshots.length,
       series: Array.from(seriesMap.values())
     });
-  });
+  }));
 
-  app.get('/stats/distribution', async (req, res) => {
+  app.get('/stats/distribution', asyncHandler(async (req, res) => {
     const { asl, hospital } = getFacilityQuery(req);
     const hours = parseHours(req.query.hours, 24 * 7, 24 * 24);
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
@@ -280,9 +292,9 @@ export function createApp() {
         avgMinutes: agg.countMinutes ? agg.sumMinutes / agg.countMinutes : null
       }))
     });
-  });
+  }));
 
-  app.get('/dashboard', async (_req, res) => {
+  app.get('/dashboard', asyncHandler(async (_req, res) => {
     const snapshot = await prisma.snapshot.findFirst({
       orderBy: { capturedAt: 'desc' },
       include: includeSnapshotQuery()
@@ -312,7 +324,7 @@ export function createApp() {
     <tbody>${rowsHtml}</tbody>
   </table>
 </body></html>`);
-  });
+  }));
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     logger.error({ err }, 'Unhandled server error');
