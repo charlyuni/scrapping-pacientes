@@ -11,6 +11,9 @@ const WEEKDAY_OPTIONS = [
   { value: 0, label: 'Domingo' }
 ];
 
+
+const TRIAGE_COLORS = ['ROSSO', 'ARANCIONE', 'AZZURRO', 'VERDE', 'BIANCO'] as const;
+
 function formatValue(value: number | null, digits = 1) {
   return value === null ? '-' : value.toFixed(digits);
 }
@@ -176,6 +179,48 @@ export function App() {
                     <td>{point.weekdayLabel}</td>
                     <td>{point.dayType}</td>
                     <td>{point.totalWaiting}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+
+          <section className="card">
+            <h2>Foto completa actual (última consulta)</h2>
+            <p className="delta">
+              Snapshot: {data.latestSnapshot ? new Date(data.latestSnapshot.capturedAt).toLocaleString() : '-'}
+            </p>
+            {data.latestSnapshot?.rawHtml
+              ? (
+                <iframe
+                  className="snapshot-frame"
+                  title="Foto completa actual"
+                  srcDoc={data.latestSnapshot.rawHtml}
+                />
+                )
+              : (
+                <p className="delta">No hay HTML disponible en el último snapshot.</p>
+                )}
+          </section>
+
+          <section className="card">
+            <h2>Tabla original (última consulta)</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Métrica</th>
+                  {TRIAGE_COLORS.map((color) => (
+                    <th key={color}>{color}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(data.latestSnapshot?.tableRows ?? []).map((row) => (
+                  <tr key={row.metricName}>
+                    <td>{row.metricName}</td>
+                    {TRIAGE_COLORS.map((color) => (
+                      <td key={`${row.metricName}-${color}`}>{row.byColor[color] ?? '-'}</td>
+                    ))}
                   </tr>
                 ))}
               </tbody>

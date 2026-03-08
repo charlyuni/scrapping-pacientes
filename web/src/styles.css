@@ -111,3 +111,12 @@ td {
 .error {
   color: #b91c1c;
 }
+
+
+.snapshot-frame {
+  width: 100%;
+  min-height: 680px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+}

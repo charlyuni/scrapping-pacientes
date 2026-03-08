@@ -47,6 +47,15 @@ export interface WaitingPatientsResponse {
     avgWaiting: number | null;
     peakWaiting: number | null;
   }>;
+  latestSnapshot: {
+    capturedAt: string;
+    sourceUrl: string | null;
+    rawHtml: string | null;
+    tableRows: Array<{
+      metricName: string;
+      byColor: Record<string, string>;
+    }>;
+  } | null;
 }
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
