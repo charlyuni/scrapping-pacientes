@@ -58,6 +58,20 @@ function asyncHandler(handler: AsyncRequestHandler): express.RequestHandler {
   };
 }
 
+function getErrorLogPayload(err: unknown) {
+  if (err instanceof Error) {
+    return {
+      name: err.name,
+      message: err.message,
+      stack: err.stack
+    };
+  }
+
+  return {
+    message: String(err)
+  };
+}
+
 class QueryTimeoutError extends Error {
   constructor(public readonly timeoutMs: number) {
     super(`Database query timed out after ${timeoutMs}ms`);
@@ -381,7 +395,7 @@ export function createApp() {
       return;
     }
 
-    logger.error({ err }, 'Unhandled server error');
+    logger.error({ error: getErrorLogPayload(err) }, 'Unhandled server error');
     res.status(500).json({ error: 'Internal server error' });
   });
 
