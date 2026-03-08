@@ -355,10 +355,28 @@ export function createApp() {
   }));
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    const errorMessage = err instanceof Error ? err.message : '';
+
     if (err instanceof QueryTimeoutError) {
       res.status(504).json({
         error: 'Database timeout',
         message: 'The database took too long to answer. Please retry in a few seconds.'
+      });
+      return;
+    }
+
+    if (errorMessage.includes('Environment variable not found: DATABASE_URL')) {
+      res.status(500).json({
+        error: 'Server misconfigured',
+        message: 'DATABASE_URL is missing in the deployment environment.'
+      });
+      return;
+    }
+
+    if (errorMessage.includes("Can't reach database server")) {
+      res.status(503).json({
+        error: 'Database unavailable',
+        message: 'The API could not connect to PostgreSQL. Check DATABASE_URL/DIRECT_URL and provider network rules.'
       });
       return;
     }
