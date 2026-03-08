@@ -46,10 +46,19 @@ export interface DistributionResponse {
   }>;
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
+const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+const REQUEST_TIMEOUT_MS = 15_000;
 
 async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  const response = await fetch(`${API_BASE}${path}`, {
+    signal: controller.signal
+  }).finally(() => {
+    clearTimeout(timeoutId);
+  });
+
   if (!response.ok) {
     throw new Error(`API ${path} failed with ${response.status}`);
   }
