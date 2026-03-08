@@ -54,9 +54,57 @@ jobs:
         run: |
           set -euo pipefail
 
+          run_migrate_deploy() {
+            local output_file
+            output_file="$(mktemp)"
+
+            set +e
+            npx prisma migrate deploy 2>&1 | tee "${output_file}"
+            local exit_code=${PIPESTATUS[0]}
+            set -e
+
+            if [ ${exit_code} -eq 0 ]; then
+              rm -f "${output_file}"
+              return 0
+            fi
+
+            if rg -q "Error: P3005" "${output_file}"; then
+              echo "Prisma reported P3005 (existing non-empty schema). Attempting baseline resolve..."
+              if [ ! -d "prisma/migrations" ]; then
+                echo "Cannot baseline because prisma/migrations directory was not found." >&2
+                cat "${output_file}" >&2
+                rm -f "${output_file}"
+                return ${exit_code}
+              fi
+
+              mapfile -t migrations < <(find prisma/migrations -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)
+
+              if [ ${#migrations[@]} -eq 0 ]; then
+                echo "Cannot baseline because no local migration folders were found." >&2
+                cat "${output_file}" >&2
+                rm -f "${output_file}"
+                return ${exit_code}
+              fi
+
+              for migration in "${migrations[@]}"; do
+                echo "Marking migration as already applied: ${migration}"
+                npx prisma migrate resolve --applied "${migration}"
+              done
+
+              echo "Baseline completed. Retrying prisma migrate deploy..."
+              rm -f "${output_file}"
+              npx prisma migrate deploy
+              return 0
+            fi
+
+            cat "${output_file}" >&2
+            rm -f "${output_file}"
+            return ${exit_code}
+          }
+
           if [ -n "${DIRECT_URL:-}" ]; then
             echo "Trying prisma migrate deploy with DIRECT_URL first..."
-            if npx prisma migrate deploy; then
+            if run_migrate_deploy; then
               exit 0
             fi
 
@@ -64,7 +112,7 @@ jobs:
           fi
 
           export DIRECT_URL="${DATABASE_URL}"
-          npx prisma migrate deploy
+          run_migrate_deploy
 
       - name: Build project
         run: npm run build
