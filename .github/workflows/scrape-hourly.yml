@@ -68,7 +68,7 @@ jobs:
               return 0
             fi
 
-            if rg -q "Error: P3005" "${output_file}"; then
+            if grep -q "Error: P3005" "${output_file}"; then
               echo "Prisma reported P3005 (existing non-empty schema). Attempting baseline resolve..."
               if [ ! -d "prisma/migrations" ]; then
                 echo "Cannot baseline because prisma/migrations directory was not found." >&2
