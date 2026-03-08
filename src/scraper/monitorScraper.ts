@@ -7,6 +7,10 @@ const SOURCE_URL = 'https://monitorps.sardegnasalute.it/monitorps/MonitorServlet
 
 type FrameContext = import('playwright').Frame | import('playwright').Page;
 
+function getContexts(page: import('playwright').Page): FrameContext[] {
+  return [page, ...page.frames()];
+}
+
 function normalizeText(value: string): string {
   return value
     .normalize('NFD')
@@ -64,8 +68,9 @@ async function selectOptionByLabelIncludes(
 
 async function selectFacility(page: import('playwright').Page, asl: string, hospital: string): Promise<void> {
   await page.waitForLoadState('domcontentloaded', { timeout: 20_000 });
+  await page.waitForSelector('select, table', { timeout: 20_000 });
 
-  const contexts: FrameContext[] = [page, ...page.frames()];
+  let contexts = getContexts(page);
 
   let aslSelect: import('playwright').Locator | null = null;
   for (const context of contexts) {
@@ -87,6 +92,15 @@ async function selectFacility(page: import('playwright').Page, asl: string, hosp
       };
     });
 
+    const hasAnyTable = (await page.locator('table').count()) > 0;
+    if (hasAnyTable) {
+      logger.warn(
+        { asl, hospital, debug },
+        "No se encontró select para ASL; se intentará continuar con el contenido ya precargado"
+      );
+      return;
+    }
+
     throw new Error(`No se encontró select para ASL '${asl}'. Debug: ${JSON.stringify(debug)}`);
   }
 
@@ -94,6 +108,7 @@ async function selectFacility(page: import('playwright').Page, asl: string, hosp
   await selectOptionByLabelIncludes(aslSelect, asl);
 
   await page.waitForLoadState('networkidle', { timeout: 20_000 });
+  contexts = getContexts(page);
 
   let hospitalSelect: import('playwright').Locator | null = null;
   for (const context of contexts) {
