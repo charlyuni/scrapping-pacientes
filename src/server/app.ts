@@ -4,6 +4,9 @@ import { logger } from '../utils/logger.js';
 
 const DEFAULT_ASL = 'ASL Nuoro';
 const DEFAULT_HOSPITAL = 'OSPEDALE SAN FRANCESCO';
+const WAITING_METRIC_NAME = 'Pazienti in attesa di visita';
+
+const WEEKDAY_LABELS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
 type SnapshotWithIncludedMetrics = NonNullable<Awaited<ReturnType<typeof prisma.snapshot.findFirst<{ include: ReturnType<typeof includeSnapshotQuery> }>>>>;
 
@@ -44,6 +47,37 @@ function parseHours(value: unknown, fallback: number, max = 24 * 14) {
   const parsed = Number(value ?? fallback);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
   return Math.min(Math.floor(parsed), max);
+}
+
+function parseDayType(value: unknown): 'ALL' | 'WEEKDAY' | 'WEEKEND' {
+  const parsed = String(value ?? 'ALL').toUpperCase();
+  if (parsed === 'WEEKDAY' || parsed === 'WEEKEND') {
+    return parsed;
+  }
+  return 'ALL';
+}
+
+function parseWeekdays(value: unknown): number[] | null {
+  if (typeof value !== 'string' || value.trim() === '') {
+    return null;
+  }
+
+  const uniqueDays = new Set(
+    value
+      .split(',')
+      .map((day) => Number(day.trim()))
+      .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+  );
+
+  if (uniqueDays.size === 0) {
+    return null;
+  }
+
+  return Array.from(uniqueDays).sort((a, b) => a - b);
+}
+
+function isWeekend(day: number) {
+  return day === 0 || day === 6;
 }
 
 type AsyncRequestHandler = (
@@ -345,6 +379,145 @@ export function createApp() {
         avgNumber: agg.countNumber ? agg.sumNumber / agg.countNumber : null,
         avgMinutes: agg.countMinutes ? agg.sumMinutes / agg.countMinutes : null
       }))
+    });
+  }));
+
+  app.get('/stats/waiting-patients', asyncHandler(async (req, res) => {
+    const { asl, hospital } = getFacilityQuery(req);
+    const hours = parseHours(req.query.hours, 24 * 14, 24 * 90);
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+    const dayType = parseDayType(req.query.dayType);
+    const weekdays = parseWeekdays(req.query.weekdays);
+    const colorCode = typeof req.query.colorCode === 'string' ? req.query.colorCode.toUpperCase() : 'ALL';
+
+    const snapshots = await withQueryTimeout(prisma.snapshot.findMany({
+      where: {
+        facility: { asl, hospital },
+        capturedAt: { gte: since },
+        metricRows: {
+          some: {
+            metricName: {
+              equals: WAITING_METRIC_NAME,
+              mode: 'insensitive'
+            }
+          }
+        }
+      },
+      orderBy: { capturedAt: 'asc' },
+      include: {
+        metricRows: {
+          where: {
+            metricName: {
+              equals: WAITING_METRIC_NAME,
+              mode: 'insensitive'
+            }
+          },
+          include: { cells: true }
+        }
+      }
+    }));
+
+    const rawSeries = snapshots
+      .map((snapshot) => {
+        const waitingRow = snapshot.metricRows[0];
+        if (!waitingRow) return null;
+        const day = snapshot.capturedAt.getDay();
+        const cells = colorCode === 'ALL'
+          ? waitingRow.cells
+          : waitingRow.cells.filter((cell) => cell.colorCode.toUpperCase() === colorCode);
+
+        const values = cells
+          .map((cell) => cell.valueNumber)
+          .filter((value): value is number => typeof value === 'number');
+
+        if (values.length === 0) return null;
+
+        return {
+          capturedAt: snapshot.capturedAt,
+          day,
+          isWeekend: isWeekend(day),
+          totalWaiting: values.reduce((acc, value) => acc + value, 0),
+          byColor: waitingRow.cells.reduce<Record<string, number>>((acc, cell) => {
+            if (typeof cell.valueNumber === 'number') {
+              acc[cell.colorCode] = (acc[cell.colorCode] ?? 0) + cell.valueNumber;
+            }
+            return acc;
+          }, {})
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+
+    const filteredSeries = rawSeries.filter((entry) => {
+      if (dayType === 'WEEKDAY' && entry.isWeekend) return false;
+      if (dayType === 'WEEKEND' && !entry.isWeekend) return false;
+      if (weekdays && !weekdays.includes(entry.day)) return false;
+      return true;
+    });
+
+    const weekdayStats = Array.from({ length: 7 }, (_, weekday) => {
+      const samples = rawSeries.filter((entry) => entry.day === weekday).map((entry) => entry.totalWaiting);
+      const avgWaiting = samples.length ? samples.reduce((acc, value) => acc + value, 0) / samples.length : null;
+
+      return {
+        weekday,
+        weekdayLabel: WEEKDAY_LABELS[weekday],
+        samples: samples.length,
+        avgWaiting,
+        peakWaiting: samples.length ? Math.max(...samples) : null
+      };
+    });
+
+    const weekdayOnlyValues = rawSeries.filter((entry) => !entry.isWeekend).map((entry) => entry.totalWaiting);
+    const weekendValues = rawSeries.filter((entry) => entry.isWeekend).map((entry) => entry.totalWaiting);
+
+    const avg = (values: number[]) => values.length ? values.reduce((acc, value) => acc + value, 0) / values.length : null;
+
+    const latest = filteredSeries.at(-1) ?? null;
+    const previous = filteredSeries.length > 1 ? filteredSeries.at(-2) ?? null : null;
+
+    res.json({
+      facility: { asl, hospital },
+      metricName: WAITING_METRIC_NAME,
+      filters: {
+        hours,
+        dayType,
+        weekdays,
+        colorCode
+      },
+      latest: latest
+        ? {
+            capturedAt: latest.capturedAt,
+            totalWaiting: latest.totalWaiting,
+            deltaVsPrevious: previous ? latest.totalWaiting - previous.totalWaiting : null,
+            byColor: latest.byColor
+          }
+        : null,
+      snapshotsInWindow: rawSeries.length,
+      snapshotsAfterFilters: filteredSeries.length,
+      series: filteredSeries.map((entry) => ({
+        capturedAt: entry.capturedAt,
+        totalWaiting: entry.totalWaiting,
+        weekday: entry.day,
+        weekdayLabel: WEEKDAY_LABELS[entry.day],
+        dayType: entry.isWeekend ? 'WEEKEND' : 'WEEKDAY'
+      })),
+      dayTypeStats: {
+        weekday: {
+          samples: weekdayOnlyValues.length,
+          avgWaiting: avg(weekdayOnlyValues),
+          peakWaiting: weekdayOnlyValues.length ? Math.max(...weekdayOnlyValues) : null
+        },
+        weekend: {
+          samples: weekendValues.length,
+          avgWaiting: avg(weekendValues),
+          peakWaiting: weekendValues.length ? Math.max(...weekendValues) : null
+        }
+      },
+      weekdayStats,
+      topPeakDays: weekdayStats
+        .filter((item) => item.peakWaiting !== null)
+        .sort((a, b) => (b.peakWaiting ?? 0) - (a.peakWaiting ?? 0))
+        .slice(0, 3)
     });
   }));
 

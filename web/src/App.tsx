@@ -1,138 +1,188 @@
 import { useEffect, useMemo, useState } from 'react';
-import { DistributionResponse, getDistribution, getSummary, getTrends, SummaryResponse, TrendsResponse } from './api';
+import { getWaitingPatientsStats, WaitingPatientsResponse } from './api';
 
-const COLOR_MAP: Record<string, string> = {
-  ROSSO: '#dc2626',
-  ARANCIONE: '#ea580c',
-  AZZURRO: '#0284c7',
-  VERDE: '#16a34a',
-  BIANCO: '#6b7280'
-};
+const WEEKDAY_OPTIONS = [
+  { value: 1, label: 'Lunes' },
+  { value: 2, label: 'Martes' },
+  { value: 3, label: 'Miércoles' },
+  { value: 4, label: 'Jueves' },
+  { value: 5, label: 'Viernes' },
+  { value: 6, label: 'Sábado' },
+  { value: 0, label: 'Domingo' }
+];
 
-function formatMinutes(value: number | null) {
-  if (value === null) return '-';
-  const hours = Math.floor(value / 60);
-  const mins = Math.round(value % 60)
-    .toString()
-    .padStart(2, '0');
-  return `${hours}:${mins}`;
-}
-
-function TinyTrend({ points, color }: { points: number[]; color: string }) {
-  if (points.length < 2) return <div className="tiny-empty">Sin serie</div>;
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const span = Math.max(1, max - min);
-  const width = 170;
-  const height = 40;
-  const path = points
-    .map((point, index) => {
-      const x = (index / (points.length - 1)) * width;
-      const y = height - ((point - min) / span) * height;
-      return `${index === 0 ? 'M' : 'L'}${x},${y}`;
-    })
-    .join(' ');
-
-  return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-      <path d={path} stroke={color} fill="none" strokeWidth={2} />
-    </svg>
-  );
+function formatValue(value: number | null, digits = 1) {
+  return value === null ? '-' : value.toFixed(digits);
 }
 
 export function App() {
-  const [summary, setSummary] = useState<SummaryResponse | null>(null);
-  const [trends, setTrends] = useState<TrendsResponse | null>(null);
-  const [distribution, setDistribution] = useState<DistributionResponse | null>(null);
+  const [hours, setHours] = useState(24 * 14);
+  const [dayType, setDayType] = useState<'ALL' | 'WEEKDAY' | 'WEEKEND'>('ALL');
+  const [colorCode, setColorCode] = useState('ALL');
+  const [weekdays, setWeekdays] = useState<number[]>([]);
+  const [data, setData] = useState<WaitingPatientsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    Promise.all([getSummary(), getTrends(), getDistribution()])
-      .then(([summaryData, trendsData, distributionData]) => {
-        setSummary(summaryData);
-        setTrends(trendsData);
-        setDistribution(distributionData);
+    setLoading(true);
+    setError(null);
+
+    getWaitingPatientsStats({ hours, dayType, weekdays, colorCode })
+      .then((response) => {
+        setData(response);
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : 'Error desconocido');
+      })
+      .finally(() => {
+        setLoading(false);
       });
-  }, []);
+  }, [hours, dayType, weekdays, colorCode]);
 
-  const trendsByKey = useMemo(() => {
-    if (!trends) return new Map<string, number[]>();
-    return new Map(
-      trends.series.map((series) => [
-        `${series.metricName}::${series.colorCode}`,
-        series.points
-          .map((point) => point.valueNumber ?? point.valueMinutes)
-          .filter((point): point is number => typeof point === 'number')
-      ])
-    );
-  }, [trends]);
-
-  if (error) {
-    return <main className="container"><h1>Dashboard MonitorPS</h1><p className="error">{error}</p></main>;
-  }
-
-  if (!summary || !trends || !distribution) {
-    return <main className="container"><h1>Dashboard MonitorPS</h1><p>Cargando datos...</p></main>;
-  }
+  const lastPoints = useMemo(() => data?.series.slice(-12) ?? [], [data]);
 
   return (
     <main className="container">
-      <header>
-        <h1>Dashboard MonitorPS</h1>
-        <p>Última actualización: {new Date(summary.latestCapturedAt).toLocaleString()}</p>
+      <header className="header-row">
+        <div>
+          <h1>Dashboard MonitorPS</h1>
+          <p className="subtitle">Métrica única: <strong>Pazienti in attesa di visita</strong></p>
+        </div>
       </header>
 
-      <section>
-        <h2>Resumen actual (vs snapshot anterior)</h2>
-        <div className="cards">
-          {summary.cards.map((card) => {
-            const key = `${card.metricName}::${card.colorCode}`;
-            const trendPoints = trendsByKey.get(key) ?? [];
+      <section className="card filters">
+        <h2>Filtros analíticos</h2>
+        <div className="filters-grid">
+          <label>
+            Ventana (horas)
+            <select value={hours} onChange={(event) => setHours(Number(event.target.value))}>
+              <option value={24 * 3}>72h</option>
+              <option value={24 * 7}>7 días</option>
+              <option value={24 * 14}>14 días</option>
+              <option value={24 * 30}>30 días</option>
+            </select>
+          </label>
+
+          <label>
+            Tipo de día
+            <select value={dayType} onChange={(event) => setDayType(event.target.value as 'ALL' | 'WEEKDAY' | 'WEEKEND')}>
+              <option value="ALL">Todos</option>
+              <option value="WEEKDAY">Solo semana</option>
+              <option value="WEEKEND">Solo fin de semana</option>
+            </select>
+          </label>
+
+          <label>
+            Color (triage)
+            <select value={colorCode} onChange={(event) => setColorCode(event.target.value)}>
+              <option value="ALL">Todos</option>
+              <option value="ROSSO">ROSSO</option>
+              <option value="ARANCIONE">ARANCIONE</option>
+              <option value="AZZURRO">AZZURRO</option>
+              <option value="VERDE">VERDE</option>
+              <option value="BIANCO">BIANCO</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="weekday-filters">
+          {WEEKDAY_OPTIONS.map((day) => {
+            const selected = weekdays.includes(day.value);
             return (
-              <article key={key} className="card">
-                <div className="chip" style={{ background: COLOR_MAP[card.colorCode] ?? '#111827' }}>
-                  {card.colorCode}
-                </div>
-                <h3>{card.metricName}</h3>
-                <p className="value">{card.current.valueString}</p>
-                <p className="delta">
-                  Δ número: {card.deltaNumber ?? '-'} | Δ min: {card.deltaMinutes ?? '-'}
-                </p>
-                <TinyTrend points={trendPoints} color={COLOR_MAP[card.colorCode] ?? '#111827'} />
-              </article>
+              <button
+                key={day.value}
+                type="button"
+                className={selected ? 'weekday active' : 'weekday'}
+                onClick={() => {
+                  setWeekdays((prev) => selected ? prev.filter((value) => value !== day.value) : [...prev, day.value]);
+                }}
+              >
+                {day.label}
+              </button>
             );
           })}
+          <button type="button" className="weekday clear" onClick={() => setWeekdays([])}>Limpiar días</button>
         </div>
       </section>
 
-      <section>
-        <h2>Distribución (últimos {distribution.hours}h)</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Métrica</th>
-              <th>Color</th>
-              <th>Muestras</th>
-              <th>Prom. número</th>
-              <th>Prom. minutos</th>
-            </tr>
-          </thead>
-          <tbody>
-            {distribution.distribution.map((row) => (
-              <tr key={`${row.metricName}-${row.colorCode}`}>
-                <td>{row.metricName}</td>
-                <td>{row.colorCode}</td>
-                <td>{row.samples}</td>
-                <td>{row.avgNumber?.toFixed(2) ?? '-'}</td>
-                <td>{formatMinutes(row.avgMinutes)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+      {error && <p className="error">{error}</p>}
+      {loading && <p>Cargando estadísticas...</p>}
+
+      {data && !loading && (
+        <>
+          <section className="cards">
+            <article className="card">
+              <h3>Pacientes en espera (actual)</h3>
+              <p className="value">{data.latest?.totalWaiting ?? '-'}</p>
+              <p className="delta">Δ vs snapshot previo: {data.latest?.deltaVsPrevious ?? '-'}</p>
+            </article>
+            <article className="card">
+              <h3>Promedio semana</h3>
+              <p className="value">{formatValue(data.dayTypeStats.weekday.avgWaiting)}</p>
+              <p className="delta">Pico: {data.dayTypeStats.weekday.peakWaiting ?? '-'} | muestras: {data.dayTypeStats.weekday.samples}</p>
+            </article>
+            <article className="card">
+              <h3>Promedio fin de semana</h3>
+              <p className="value">{formatValue(data.dayTypeStats.weekend.avgWaiting)}</p>
+              <p className="delta">Pico: {data.dayTypeStats.weekend.peakWaiting ?? '-'} | muestras: {data.dayTypeStats.weekend.samples}</p>
+            </article>
+            <article className="card">
+              <h3>Snapshots</h3>
+              <p className="value">{data.snapshotsAfterFilters}</p>
+              <p className="delta">Total ventana: {data.snapshotsInWindow}</p>
+            </article>
+          </section>
+
+          <section className="card">
+            <h2>Picos por día de la semana</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Día</th>
+                  <th>Muestras</th>
+                  <th>Promedio espera</th>
+                  <th>Pico espera</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.weekdayStats.map((row) => (
+                  <tr key={row.weekday}>
+                    <td>{row.weekdayLabel}</td>
+                    <td>{row.samples}</td>
+                    <td>{formatValue(row.avgWaiting)}</td>
+                    <td>{row.peakWaiting ?? '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+
+          <section className="card">
+            <h2>Últimos puntos de la serie</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Día</th>
+                  <th>Tipo</th>
+                  <th>Total en espera</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lastPoints.map((point) => (
+                  <tr key={point.capturedAt}>
+                    <td>{new Date(point.capturedAt).toLocaleString()}</td>
+                    <td>{point.weekdayLabel}</td>
+                    <td>{point.dayType}</td>
+                    <td>{point.totalWaiting}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        </>
+      )}
     </main>
   );
 }
