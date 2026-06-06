@@ -10,7 +10,8 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
-    "migrate:deploy": "prisma migrate deploy"
+    "migrate:deploy": "prisma migrate deploy",
+    "scrape:once": "node dist/scrapeOnce.js"
   },
   "dependencies": {
     "@prisma/client": "^6.4.1",
