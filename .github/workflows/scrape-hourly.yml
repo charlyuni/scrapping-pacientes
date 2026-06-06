@@ -5,7 +5,16 @@ on:
     # Ejecuta el workflow cada hora en UTC (HH:00)
     - cron: "0 * * * *"
   # Permite ejecutarlo manualmente desde la pestaña Actions en GitHub
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      run_migrations:
+        description: "Ejecutar prisma migrate deploy antes del scraping"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 jobs:
   scrape:
@@ -47,10 +56,11 @@ jobs:
           fi
 
           if [ -z "${DIRECT_URL}" ]; then
-            echo "DIRECT_URL is not set. Prisma migrate will run using DATABASE_URL as fallback."
+            echo "DIRECT_URL is not set. Scheduled scraping will continue; migrations require a direct database URL."
           fi
 
       - name: Run Prisma migrations
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_migrations == 'true' }}
         run: |
           set -euo pipefail
 
@@ -102,21 +112,17 @@ jobs:
             return ${exit_code}
           }
 
-          if [ -n "${DIRECT_URL:-}" ]; then
-            echo "Trying prisma migrate deploy with DIRECT_URL first..."
-            if run_migrate_deploy; then
-              exit 0
-            fi
-
-            echo "DIRECT_URL failed. Retrying prisma migrate deploy using DATABASE_URL as DIRECT_URL fallback..." >&2
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "DIRECT_URL is required for migrations. Use the direct Supabase/Neon/Postgres URL, not the pooler URL." >&2
+            exit 1
           fi
 
-          export DIRECT_URL="${DATABASE_URL}"
+          echo "Trying prisma migrate deploy with DIRECT_URL..."
           run_migrate_deploy
 
       - name: Build project
         run: npm run build
 
-      - name: Run scraper
-        # Ejecutamos el script principal que realiza el scraping una sola vez
-        run: node dist/index.js
+      - name: Run scraper once
+        # Ejecutamos solo el scraping puntual para que la Action termine y no levante el servidor/scheduler.
+        run: npm run scrape:once
