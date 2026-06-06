@@ -417,7 +417,13 @@ export function createApp() {
       }
     }));
 
-    const latestSnapshot = snapshots.at(-1) ?? null;
+    const latestFullSnapshot = await withQueryTimeout(prisma.snapshot.findFirst({
+      where: {
+        facility: { asl, hospital }
+      },
+      orderBy: { capturedAt: 'desc' },
+      include: includeSnapshotQuery()
+    }));
 
     const rawSeries = snapshots
       .map((snapshot) => {
@@ -520,12 +526,12 @@ export function createApp() {
         .filter((item) => item.peakWaiting !== null)
         .sort((a, b) => (b.peakWaiting ?? 0) - (a.peakWaiting ?? 0))
         .slice(0, 3),
-      latestSnapshot: latestSnapshot
+      latestSnapshot: latestFullSnapshot
         ? {
-            capturedAt: latestSnapshot.capturedAt,
-            sourceUrl: latestSnapshot.sourceUrl,
-            rawHtml: latestSnapshot.rawHtml,
-            tableRows: latestSnapshot.metricRows.map((row) => ({
+            capturedAt: latestFullSnapshot.capturedAt,
+            sourceUrl: latestFullSnapshot.sourceUrl,
+            rawHtml: latestFullSnapshot.rawHtml,
+            tableRows: latestFullSnapshot.metricRows.map((row) => ({
               metricName: row.metricName,
               byColor: row.cells.reduce<Record<string, string>>((acc, cell) => {
                 acc[cell.colorCode] = cell.valueString;
@@ -588,10 +594,18 @@ export function createApp() {
       return;
     }
 
-    if (errorMessage.includes("Can't reach database server")) {
+    if (errorMessage.includes("Can't reach database server") || errorMessage.includes('P1001')) {
       res.status(503).json({
         error: 'Database unavailable',
         message: 'The API could not connect to PostgreSQL. Check DATABASE_URL/DIRECT_URL and provider network rules.'
+      });
+      return;
+    }
+
+    if (errorMessage.includes('tenant/user') || errorMessage.includes('ENOTFOUND')) {
+      res.status(503).json({
+        error: 'Database connection misconfigured',
+        message: 'PostgreSQL rejected the configured pooler tenant/user. Check the Supabase DATABASE_URL project ref and username.'
       });
       return;
     }

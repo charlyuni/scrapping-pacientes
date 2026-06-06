@@ -72,7 +72,17 @@ async function fetchJson<T>(path: string): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(`API ${path} failed with ${response.status}`);
+    let detail = '';
+
+    try {
+      const body = await response.clone().json() as { error?: string; message?: string };
+      detail = [body.error, body.message].filter(Boolean).join(': ');
+    } catch {
+      detail = await response.text();
+    }
+
+    const suffix = detail ? ` - ${detail}` : '';
+    throw new Error(`API ${path} failed with ${response.status}${suffix}`);
   }
   return response.json() as Promise<T>;
 }
