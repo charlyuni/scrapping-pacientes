@@ -190,42 +190,34 @@ export function App() {
             <p className="delta">
               Snapshot: {data.latestSnapshot ? new Date(data.latestSnapshot.capturedAt).toLocaleString() : '-'}
             </p>
-            {data.latestSnapshot?.rawHtml
+            {data.latestSnapshot?.tableRows.length
               ? (
-                <iframe
-                  className="snapshot-frame"
-                  title="Foto completa actual"
-                  srcDoc={data.latestSnapshot.rawHtml}
-                />
+                <table className="snapshot-table">
+                  <thead>
+                    <tr>
+                      <th>Métrica</th>
+                      {TRIAGE_COLORS.map((color) => (
+                        <th key={color}>{color}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.latestSnapshot.tableRows.map((row) => (
+                      <tr key={row.metricName}>
+                        <td>{row.metricName}</td>
+                        {TRIAGE_COLORS.map((color) => (
+                          <td key={`${row.metricName}-${color}`}>{row.byColor[color] ?? '-'}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
                 )
               : (
-                <p className="delta">No hay HTML disponible en el último snapshot.</p>
+                <p className="delta">No hay filas de tabla disponibles en el último snapshot.</p>
                 )}
           </section>
 
-          <section className="card">
-            <h2>Tabla original (última consulta)</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>Métrica</th>
-                  {TRIAGE_COLORS.map((color) => (
-                    <th key={color}>{color}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {(data.latestSnapshot?.tableRows ?? []).map((row) => (
-                  <tr key={row.metricName}>
-                    <td>{row.metricName}</td>
-                    {TRIAGE_COLORS.map((color) => (
-                      <td key={`${row.metricName}-${color}`}>{row.byColor[color] ?? '-'}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
         </>
       )}
     </main>

@@ -117,6 +117,6 @@ jobs:
       - name: Build project
         run: npm run build
 
-      - name: Run scraper
-        # Ejecutamos el script principal que realiza el scraping una sola vez
-        run: node dist/index.js
+      - name: Run scraper once
+        # Ejecutamos solo el scraping puntual para que la Action termine y no levante el servidor/scheduler.
+        run: npm run scrape:once

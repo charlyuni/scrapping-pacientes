@@ -3,10 +3,8 @@ import { prisma } from './db/client.js';
 import { runScrapeWithRetry } from './scraper/snapshotService.js';
 import { startScheduler } from './scheduler/hourlyScheduler.js';
 import { createApp } from './server/app.js';
+import { TARGET_ASL, TARGET_HOSPITAL } from './config/target.js';
 import { logger } from './utils/logger.js';
-
-const TARGET_ASL = 'ASL Nuoro';
-const TARGET_HOSPITAL = 'OSPEDALE SAN FRANCESCO';
 
 async function main() {
   const app = createApp();
